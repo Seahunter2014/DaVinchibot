@@ -1,0 +1,142 @@
+import openai
+import telegram
+from telegram.ext import CommandHandler, MessageHandler, Updater
+from telegram.ext.filters import Filters
+import requests
+from io import BytesIO
+from PIL import Image
+import numpy as np
+
+# Устанавливаем токен API Telegram
+telegram_api_key = "6296829476:AAEnU7a29ynj1qPHXeWzhJvD0r4w4WkofUI"
+
+# Устанавливаем токен API OpenAI
+openai_api_key = "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"
+
+# Устанавливаем ID канала
+channel_id = "-1001682598764"
+subscribed_users = set()
+
+# Функция для проверки подписки пользователя на канал
+def check_subscription(update, context):
+    user_id = update.effective_user.id
+    try:
+        chat_member = context.bot.get_chat_member(channel_id, user_id)
+    except telegram.error.TelegramError as e:
+        print(f"Error checking subscription for user {user_id}: {e}")
+        return False
+    if chat_member.status in ['member', 'creator', 'administrator']:
+        subscribed_users.add(user_id)
+        return True
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Пожалуйста, подпишитесь на канал @cryptohunt_tg, чтобы использовать этого бота.")
+        return False
+
+# Функция для обработки команды /start
+def start_command(update, context):
+    start(update, context)
+
+# Функция для обработки команды /start
+def start(update, context):
+    # Получаем ID пользователя
+    user_id = update.message.from_user.id
+
+    # Проверяем подписку на канал
+    is_subscribed = check_subscription(update, context)
+
+    if is_subscribed:
+        # Если пользователь подписан на канал, отправляем сообщение
+        update.message.reply_text('Добро пожаловать! Вы подписаны на канал @cryptohunt_tg.')
+    else:
+        # Если пользователь не подписан на канал, отправляем сообщение с просьбой подписаться
+        update.message.reply_text('Для использования бота необходимо подписаться на канал @cryptohunt_tg.')
+
+# Функция для обработки текстовых сообщений
+def process_text(update, context):
+    # Проверяем подписку пользователя на канал
+    if not check_subscription(update, context):
+        return
+
+    # Получаем текст запроса от пользователя
+    input_text = update.message.text
+
+    if not input_text:
+        return
+
+    try:
+        # Генерируем изображение с помощью модели DALL·E
+        response = openai.Completion.create(
+            engine="image-alpha-001",
+            prompt=f"generate an image of {input_text}",
+            max_tokens=256,
+            n=1,
+            stop=None,
+            temperature=0.5,
+        )
+
+        # Получаем ссылку на сгенерированное изображение
+        image_url = response.choices[0].text.strip()
+
+        # Загружаем изображение в буфер
+        image_data = requests.get(image_url).content
+try:
+    # Открываем изображение
+    image = Image.open(BytesIO(image_data))
+
+    # Делаем обработку изображения (например, ресайз или поворот)
+    # ...
+
+    # Преобразуем изображение в массив numpy, и перехватываем ошибки, если они возникают
+    try:
+        image_array = np.array(image)
+    except Exception as e:
+        raise Exception(f"Error converting image to numpy array: {e}")
+
+    # Обрабатываем массив numpy (например, применяем фильтры)
+    # ...
+
+    # Преобразуем обработанный массив numpy обратно в изображение
+    output_image = Image.fromarray(image_array)
+
+    # Отправляем обработанное изображение пользователю
+    bio = BytesIO()
+    output_image.save(bio, format='PNG')
+    bio.seek(0)
+    update.message.reply_photo(bio)
+
+except openai.error.InvalidRequestError:
+    # Если запрос некорректный, отправляем сообщение об ошибке
+    update.message.reply_text('Ошибка: некорректный запрос.')
+except requests.exceptions.RequestException:
+    # Если возникла ошибка при загрузке изображения, отправляем сообщение об ошибке
+    update.message.reply_text('Ошибка: не удалось загрузить изображение.')
+except Exception as e:
+    # Если возникла какая-то другая ошибка, отправляем сообщение об ошибке
+    print(f"Error processing message '{input_text}' from user {update.effective_user.id}: {e}")
+    update.message.reply_text('Ошибка: не удалось обработать запрос.')
+finally:
+    # Закрываем буфер BytesIO
+    bio.close()
+
+# Функция для запуска бота
+def run_bot():
+# Создаем объект Updater и передаем ему токен API Telegram
+updater = Updater(telegram_api_key)
+# Получаем объект Dispatcher
+dispatcher = updater.dispatcher
+
+# Регистрируем обработчики команд
+start_handler = CommandHandler('start', start_command)
+dispatcher.add_handler(start_handler)
+
+# Регистрируем обработчики текстовых сообщений
+text_handler = MessageHandler(Filters.text & ~Filters.command, process_text)
+dispatcher.add_handler(text_handler)
+
+# Запускаем бота
+updater.start_polling()
+
+# Запускаем бесконечный цикл для работы бота
+updater.idle()
+if name == 'main':
+run_bot()
